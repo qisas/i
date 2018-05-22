@@ -1,0 +1,568 @@
+<script> currentMenu=1; </script>
+<script src="/js/childCommon.js"></script>
+<script>
+console.log('its working');
+pageName="connectionStatus";
+
+var wanInfo = getWanInfo();
+var wanState=wanInfo.wan_state;
+var uploadRate = wanInfo.upload;
+var downloadRate = wanInfo.download;
+var connectTime = wanInfo.dur_time;
+var wanIP = wanInfo.wan_ip;
+var wanIP6 = wanInfo.wan_ip6;
+var networkType = wanInfo.network_type;
+var networkName = wanInfo.network_name;
+var wanRoam=wanInfo.roam;
+var wanUsage = wanInfo.usage;
+
+var simInfo = getSimcardInfo();
+var simState=simInfo.sim_state;
+var pinState=simInfo.pin_state;
+var simRemainTime = simInfo.pin_puk_times;
+var simLockState = simInfo.sim_lock_state;
+var simLockTime = simInfo.sim_lock_remain_time;
+
+/*
+var wlanSettingInfo=getWlanSettingInfo();
+var wlanSsid = wlanSettingInfo.ssid;
+var wlanSecurity = wlanSettingInfo.security_mode;
+var wlanState = wlanSettingInfo.wifi_state;
+var wlanMaxUser = wlanSettingInfo.max_numsta;
+var wlanCurrentUser = wlanSettingInfo.curr_num;
+*/
+
+var profile_list = getProfileList().data;
+var current_profile = getCurrentDialProfile();
+
+$(document).ready(function(){
+	initSimState(simState,pinState,simRemainTime,simLockState,simLockTime);
+	showWanInfo(wanIP,networkType,networkName,wanState,wanUsage,wanIP6);
+	//showWlanInfo(wlanState,wlanSsid,wlanSecurity,wlanCurrentUser,wlanMaxUser);
+	showProfile(wanState);
+	$(".btnSubmit").click(function(){
+		$(".iptText").removeClass("errorIpt");
+        $(".rule").remove();
+	}); 
+	$(document).keypress(function (e) {
+        if (e.which == 13&&pageName=="connectionStatus") {
+            return false;
+        }
+    });
+	$("#btnConnect").click(connectWanEvent);
+	$("#btnDisconnect").click(disconnectWanEvent);
+	$("#btnCancelConnect").click(cancelConnectEvent);
+	$("#btnInitApply").click(apply_pinEvent);
+	$("#btnInitCancel").click(pin_reset);
+	$("#btnPukApply").click(apply_pukEvent);
+	$("#btnPukCancel").click(puk_reset);
+	$("#btnLockApply").click(simLockEvent);
+	$("#btnLockCancel").click(simlock_reset);
+	$("#btnInitApply, #btnInitCancel, #btnPukApply, #btnPukCancel, #btnLockApply, #btnLockCancel").setBtnDisabled(); 
+	$("input[type='password']").bind("input change keyup keydown paste",function(){
+		$("#btnInitApply, #btnInitCancel, #btnPukApply, #btnPukCancel").removeBtnDisabled();
+	})
+	$("#iptSimLock").bind("input change keyup keydown paste",function(){
+		$("#btnLockApply, #btnLockCancel").removeBtnDisabled();
+	});
+});
+
+function showProfile(wanState){
+    var list=profile_list
+    if(list == null) return;
+    var str="";
+    $.each(list,function(i,v){
+    	var isCurrentProfile;
+    	var isDefaultProfile=v.profile_defualt==DEFUALT_PROFILE_VALUE?true:false;
+    	if(wanState == MACRO_PPP_CONNECTED || wanState == MACRO_PPP_CONNECTING || wanState == MACRO_PPP_DISCONNECTING){
+    		isCurrentProfile=v.profile_id==current_profile?"selected":"";
+    		str+=isDefaultProfile?"<option "+isCurrentProfile+" value ="+ v.profile_id + ">"+v.profile_name+" (D)</option>":"<option "+isCurrentProfile+"  value ="+ v.profile_id + ">"+v.profile_name+"</option>";
+    	}else{
+    		str+=isDefaultProfile?"<option selected value ="+ v.profile_id + ">"+v.profile_name+" (D)</option>":"<option value ="+ v.profile_id + ">"+v.profile_name+"</option>";
+    	}
+    })
+    $("#selProfileName").html(str);
+}
+
+function initSimState(simState,pinState,simRemainTime,simLockState,simLockTime){
+	var simLockStateStr;
+
+	var simCardStatusId="#simCardStatus";
+	var pinReqTableId="#pinReqTable";
+	var pukReqTableId="#pukReqTable";
+	var connectTableId="#connectTable";
+	var simErrorId="#simError";
+	var simLockReqTableId="#simLockReqTable";
+	var simLockFirbidTableId="#simLockFirbidTable";
+
+	var iptPinCodeId="#iptPinInit";
+	var iptPukCodeId="#iptPukCode";
+	var iptSimLockId="#iptSimLock";
+
+	function showDiv(id){
+		$(id).css("display","");
+	}
+	var realState=getSimCardState(simState, pinState);
+
+	switch(realState){
+		case "noCard":
+			showDiv(simCardStatusId);
+			$(simCardStatusId).html(sys.getRes("ids_sim_noSimCard"));
+			break;
+		case "pinReq":
+			showDiv(pinReqTableId);
+			$(iptPinCodeId).selectFocus();
+			break;
+		case "pukReq":
+			showDiv(pukReqTableId);
+			$(iptPukCodeId).selectFocus();
+			break;
+		case "normal":
+			showDiv(connectTableId);
+			showWanBox(wanState);
+			break;
+		case "simLock":
+			switch(simLockState){
+				case SIMLOCK_PERSO_NET_PIN_REQUIRED:
+					simLockStateStr=sys.getRes("ids_sim_nck")+":";
+					showDiv(simLockReqTableId);
+					break;
+				case SIMLOCK_PERSO_NETSUB_PIN_REQUIRED:
+					simLockStateStr=sys.getRes("ids_sim_nsck")+":";
+					showDiv(simLockReqTableId);
+					break;
+				case SIMLOCK_PERSO_SP_PIN_REQUIRED:
+					simLockStateStr=sys.getRes("ids_sim_spck")+":";
+					showDiv(simLockReqTableId);
+					break;
+				case SIMLOCK_PERSO_CORP_PIN_REQUIRED:
+					simLockStateStr=sys.getRes("ids_sim_cck")+":";
+					showDiv(simLockReqTableId);
+					break;
+				case SIMLOCK_PERSO_PH_FSIM_PIN_REQUIRED:
+					simLockStateStr=sys.getRes("ids_sim_pck")+":";
+					showDiv(simLockReqTableId);
+					break;
+				case SIMLOCK_PERSO_NET_PUK_REQUIRED:
+				case SIMLOCK_PERSO_NETSUB_PUK_REQUIRED:
+				case SIMLOCK_PERSO_SP_PUK_REQUIRED:
+				case SIMLOCK_PERSO_CORP_PUK_REQUIRED:
+				case SIMLOCK_PERSO_PH_FSIM_PUK_REQUIRED:
+					simLockStateStr=sys.getRes("ids_sim_rck")+":";
+					showDiv(simLockReqTableId);
+					break;
+				case SIMLOCK_PERSO_RCK_FORBID:
+					showDiv(simLockFirbidTableId);
+					break;
+				default:
+					showDiv(simCardStatusId);
+					$(simCardStatusId).html(sys.getRes("ids_dlg_error"));
+					break;
+			}
+			$("#spnSimLock").html(simLockStateStr);
+			break;
+		case "invalid":
+			showDiv(simCardStatusId);
+			$(simCardStatusId).html(sys.getRes("ids_sim_invalidSimCard"));
+			break;
+		default:
+			showDiv(simCardStatusId);
+			$(simCardStatusId).html(sys.getRes("ids_sim_noSimCard"));
+	}
+	showCurrentInfo(wanState,downloadRate,uploadRate,connectTime,wanRoam);
+	$(".remainTime").html(simRemainTime);
+    $("#spnSimLockTime").html(simLockTime);
+
+}
+
+function showWanBox(wanState){
+	var $selProfileName=$("#selProfileName");
+	var $connectBox=$("#connectBox");
+	var $disconnectBox=$("#disconnectBox");
+	var $cancelConnectBox=$("#cancelConnectBox");
+
+	$disconnectBox.css("display","none");
+	$connectBox.css("display","none");
+	$cancelConnectBox.css("display","none");
+
+    switch(parseInt(wanState)){
+        case MACRO_PPP_CONNECTED:
+            $disconnectBox.css("display","");
+            $selProfileName.attr("disabled",true);
+            break;
+        case MACRO_PPP_CONNECTING:
+			$cancelConnectBox.css("display","");
+            $selProfileName.attr("disabled",true);
+            break;
+        case MACRO_PPP_DISCONNECTING:
+            $selProfileName.attr("disabled",true);
+            break;
+        case MACRO_PPP_DISCONNECTED:
+			$connectBox.css("display","");
+            $selProfileName.attr("disabled",false);
+            showProfile(wanState);
+        	break;
+        default:
+			$connectBox.css("display","");
+            $selProfileName.attr("disabled",false);
+            showProfile(wanState);
+            break;
+    }
+}
+
+function disconnectWanEvent(){
+	var $btnDisconnect=$("#btnDsconnect");
+    	$btnDisconnect.setBtnDisabled();
+    setWanDisconnect(function(result){
+        if(result==API_RESULT_SUCCESS){
+            page.reloadMain();
+        }
+        else{
+            sys.alert("ids_dlg_fail",function(){
+            	$btnDisconnect.removeBtnDisabled();
+            });
+        }   
+    })
+	
+}
+
+function connectWanEvent(){
+	var $btnConnect=$("#btnConnect");
+	$btnConnect.setBtnDisabled();
+    var wan_profile_value=$("#selProfileName").val();
+    var params={
+        "profile_id":wan_profile_value
+    }
+    setWanConnect(params,function(result){
+        if(result==API_RESULT_SUCCESS){
+            page.reloadMain();
+        }
+        else{
+            sys.alert("ids_dlg_fail",function(){
+            	$btnConnect.removeBtnDisabled();
+            });
+        }   
+    })		
+}
+
+function cancelConnectEvent(){
+	var $btnCancelConnect=$("#btnCancelConnect");
+	$btnCancelConnect.setBtnDisabled();
+	setCancelWanConnect(function(result){
+		if(result==API_RESULT_SUCCESS){
+			page.reloadMain();
+		}else{
+			sys.alert("ids_dlg_fail",function(){
+				$btnCancelConnect.removeBtnDisabled();
+			});
+		}
+	})
+}
+function validate_pin(pin_code){
+	if ((pin_code.length < 4) || (pin_code.length > 8)){
+        return false;
+    }
+    else if (isNumber(pin_code) == false){
+        return false;
+    }
+    return true;
+}
+
+ function validate_puk(puk_code){
+ 	var $iptPukCode=$("#iptPukCode");
+    if (puk_code == ""){
+		$iptPukCode.showRule("ids_dlg_sim_inputPuk")
+        return false;
+    }
+    else if (puk_code.length != 8){
+		$iptPukCode.showRule("ids_dlg_sim_pukRule")
+        return false;
+    }
+    else if (isNumber(puk_code) == false){
+		$iptPukCode.showRule("ids_dlg_sim_pukRule")
+        return false;
+    }
+    return true;
+}
+
+function validate_sim_lock(sim_lock_code){
+	var $iptSimLock=$("#iptSimLock");
+	if(sim_lock_code == ""){
+		$iptSimLock.showRule("ids_dlg_sim_inputLockCode")
+		return false;
+	}
+	else if(sim_lock_code.length != 10){
+		$iptSimLock.showRule("ids_dlg_sim_lockCodeRule")
+		return false;
+	}
+	else if(isNumber(sim_lock_code) == false){
+		$iptSimLock.showRule("ids_dlg_sim_lockCodeRule")
+		return false;
+	}
+	return true;
+}
+
+function apply_pinEvent(){
+    var pinVal = $.trim($("#iptPinInit").val());	
+	if(pinVal == ""){
+		$("#iptPinInit").showRule("ids_dlg_sim_inputCurrentPin");
+        return false;
+	}
+	if (false == validate_pin(pinVal)){
+		$("#iptPinInit").showRule("ids_dlg_sim_pinRule");
+        return false;
+    }	
+	var params={
+        "pin":pinVal
+    }
+    $("#btnInitApply,#btnInitCancel").setBtnDisabled();
+	set_unlockPIN(params,function(result){
+        if(result == API_RESULT_SUCCESS){
+            sys.alert("ids_dlg_success",function(){
+                pageInitSimCard();
+			});
+        }else{
+            sys.alert("ids_dlg_fail",function(){
+				$("#iptPinInit").selectFocus();
+				if(getSimcardInfo().pin_state == MACRO_UIM_PIN_STATE_BLOCKED){
+					page.reloadMain();
+				}else{
+					$("#iptPinInit").val("");
+					$("#spnInitTime").html(getSimcardInfo().pin_puk_times);
+				}
+			});
+        }
+    })
+}	
+
+function apply_pukEvent(){
+    var pukVal = $.trim($("#iptPukCode").val());
+	var pukNewVal = $.trim($("#iptPukNew").val());
+    var pukVerifyVal = $.trim($("#iptPukVerify").val());
+	if(false == validate_puk(pukVal)){
+		return false;
+	}
+	if(pukNewVal == ""){
+		$("#iptPukNew").showRule("ids_dlg_sim_inputNewPin")
+		return false;
+	}else if (false == validate_pin(pukNewVal)){
+		$("#iptPukNew").showRule("ids_dlg_sim_pinRule")
+		return false;
+	}
+	if(pukVerifyVal == ""){
+		$("#iptPukVerify").showRule("ids_dlg_sim_inputConfirmPin")
+		return false;
+	}else if(false == validate_pin(pukVerifyVal)){
+		$("#iptPukVerify").showRule("ids_dlg_sim_pinRule")
+		return false;
+	}if (pukNewVal != pukVerifyVal){
+		$("#iptPukVerify").showRule("ids_dlg_sim_pinConfirmed")
+		return false;
+	}
+	var params = {
+		"newpin":pukNewVal,
+        "puk":pukVal
+	}
+	$("#btnPukApply,#btnPukCancel").setBtnDisabled();
+	set_unlockPUK(params,function(result){
+		if(result == API_RESULT_SUCCESS){
+			sys.alert("ids_dlg_success",function(){
+				pageInitSimCard();
+			});
+		}
+		else{
+			sys.alert("ids_dlg_fail",function(){
+				puk_reset();
+				$("#iptPukCode").focus();
+				$("#spnPukTime").html(getSimcardInfo().pin_puk_times);
+			});
+		}   
+	})
+}
+
+function simLockEvent(){
+	var $simLock = $("#iptSimLock");
+	var simLockVal = $simLock.val();
+	if(false == validate_sim_lock(simLockVal)){
+		return false;
+	}
+	var params = {
+		"sim_lock_state":simLockState,
+		"sim_lock_code":simLockVal
+	}
+	setUnlockSIMLock(params,function(result){
+		if(result == API_RESULT_SUCCESS){
+			sys.alert("ids_dlg_success",function(){
+				page.startLoading();
+			    setTimeout("timeLoad()",4000);
+			});
+		}else{
+			sys.alert("ids_dlg_fail",function(){
+            	page.reloadMain();
+            });
+			
+		}
+	})
+}
+
+function timeLoad(){
+    page.stopLoading()
+    page.reloadMain();
+}
+	
+function pin_reset(){
+    $("#iptPinInit").val("");
+}
+	
+function puk_reset(){
+    $("#iptPukCode, #iptPukNew, #iptPukVerify").val("");
+}
+
+function simlock_reset(){
+    $("#iptSimLock").val("");
+}	
+</script>
+<div id="conStatusPage" class="jsTemplate">
+	<div class="title">${ids_wan_connStatus}</div>
+	<div class="batten"><h3>${ids_wan_connStatus}</h3></div>
+	<table class="commonTable" id="connectTable" style="display:none;" cellpadding="0" cellspacing="0">
+		<tr>
+			<td>${ids_wan_activeProfile:}</td>
+			<td>
+				<select id="selProfileName" class="select"> </select>
+			</td>
+			<td id="connectBox" style="display:none;">
+				<button class="btnNormal" id="btnConnect">${ids_wan_connect}</button>
+			</td>
+			<td id="disconnectBox" style="display:none;">
+				<div class="btnLong">
+					<button class="btnNormal" id="btnDisconnect">${ids_btn_wan_disconnect}</button>
+				</div>
+			</td>
+			<td id="cancelConnectBox" style="display:none;">
+				<div class="btnLong">
+					<button class="btnNormal" id="btnCancelConnect">${ids_btn_cancel}</button>
+				</div>
+			</td>
+			<td></td>
+		</tr>
+		<tr>
+			<td>${ids_wan_connStatus:}</td>
+			<td colspan="2"><span id="spnWanConnectState"></span></td>
+			<td></td>
+		<tr>
+			<td>${ids_wan_usage:}</td>
+			<td><span id="spnWanUsage"></span></td>
+			<td></td>
+			<td></td>
+		</tr>
+		<tr>
+			<td>${ids_wan_duration:}</td>
+			<td colspan="2"><span id="spnConnectTime"></span></td>
+			<td class="textAlign"><a href="#connection/usageHistory.html" class="linkPage changePageLink">${ids_wan_usageHistory}</a></td>
+		</tr>
+	</table>
+	<div class="conPinForm" id="simCardStatus" style="display:none"></div>
+	<div class="conPinForm" id="pinReqTable" style="display:none">
+		<ul>
+			<li><label>${ids_sim_pinCode:}</label><input type="password" id="iptPinInit" value="" maxlength="8" class="iptText"></li>
+			<li><label>${ids_sim_remainTime:}</label><span id="spnInitTime" class="remainTime"></span></li>
+			<li>
+				<span class="space"><button class="btnNormal btnSubmit" id="btnInitApply">${ids_btn_apply}</button></span> <span class="space"><button class="btnNormal" id="btnInitCancel">
+				${ids_btn_cancel}
+			</button></span>
+			</li>
+		</ul>
+	</div>
+	<div class="conPukForm" id="pukReqTable" style="display:none;">
+		<ul>
+			<li>
+				<label class="text">${ids_sim_pukCode:}</label>
+				<span class="text1">${ids_sim_remainTime:}<span id="spnPukTime" class="remainTime"></span></span>
+				<input type="password" id="iptPukCode" maxLength="8" value="" class="iptText">
+			</li>
+			<li><label class="text">${ids_sim_newPinCode:}</label><input type="password" id="iptPukNew" maxLength="8" value="" class="iptText"></li>
+			<li><label class="text">${ids_sim_confirmPinCode:}</label><input type="password" id="iptPukVerify" maxLength="8" value="" class="iptText"></li>
+			<li style="margin:5px 0">
+				<label class="text">&nbsp;</label> <span><button class="btnNormal btnSubmit" id="btnPukApply">${ids_btn_apply}</button></span>
+				<span style="margin-left:100px"><button class="btnNormal" id="btnPukCancel">${ids_btn_cancel}</button></span>
+			</li>
+		</ul>
+	</div>
+	<div class="conPinForm" id="simLockReqTable" style="display:none">
+		<ul>
+			<li><span class="text" id="spnSimLock"></span>&nbsp;&nbsp;&nbsp;&nbsp;<input type="password" id="iptSimLock" value="" maxLength="10" class="iptText"></li>
+			<li><label>${ids_sim_remainTime:}</label><span id="spnSimLockTime"></span></li>
+			<li>
+				<span><button class="btnNormal" id="btnLockApply">${ids_btn_apply}</button></span> <span style="margin-left:100px"><button class="btnNormal" id="btnLockCancel">
+				${ids_btn_cancel}
+			</button></span>
+			</li>
+		</ul>
+	</div>
+	<table class="commonTable" id="simLockFirbidTable" style="display:none" cellpadding="0" cellspacing="0">
+		<tr>
+			<td colspan="4" align="center"><h3>${ids_sim_lockForbidden}</h3></td>
+		</tr>
+	</table>
+	<div class="conPinForm" id="simError" style="display:none">
+		<ul>
+			<li style="text-align:center"><h3>${ids_dlg_error}</h3></li>
+		</ul>
+	</div>
+	<div class="batten"><h3>${ids_wan_status}</h3></div>
+	<table class="commonTable" id="wanTable" cellpadding="0" cellspacing="0">
+		<tr>
+			<td>${ids_network_networkName:}</td>
+			<td><span id="spnWanNetworkName"></span></td>
+			<td></td>
+			<td></td>
+		</tr>
+		<tr>
+			<td>${ids_network_networkType:}</td>
+			<td><span id="spnWanNetworkType"></span></td>
+			<td></td>
+			<td></td>
+		</tr>
+		<tr>
+			<td>${ids_wan_roaming:}</td>
+			<td><span id="spnWanRoam"></span></td>
+			<td></td>
+			<td></td>
+		</tr>
+		<tr>
+			<td>${ids_ip4Address:}</td>
+			<td><span id="spnWanIpAddr"></span></td>
+			<td></td>
+			<td></td>
+		</tr>
+		<tr>
+			<td>${ids_ip6Address:}</td>
+			<td><span id="spnWanIpV6Addr"  colspan="2"></span></td>
+			<td></td>
+		</tr>
+	</table>
+	<!--
+	<div class="batten"><h3>${ids_wifi_status}</h3></div>
+	<table class="commonTable" id="wlanTable" cellpadding="0" cellspacing="0">
+		<tr>
+			<td>${ids_wifi_ssid:}</td>
+			<td><span id="spnWlanSsid"></span></td>
+			<td></td>
+			<td></td>
+		</tr>
+		<tr>
+			<td>${ids_wifi_security:}</td>
+			<td><span id="spnWlanSecurity"></span></td>
+			<td></td>
+			<td></td>
+		</tr>
+		<tr>
+			<td>${ids_login_user:}</td>
+			<td><span id="spnWlanUser"></span></td>
+			<td></td>
+			<td class="textAlign"><a href="#connection/connectedDevice.html" class="linkPage changePageLink">${ids_wifi_connectDevice}</a></td>
+		</tr>
+	</table>
+	-->
+</div>
