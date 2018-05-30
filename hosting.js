@@ -38,6 +38,7 @@ function launch() {
                 }
             }
             loadResourcesAndLaunchGame(dsn, "versions.json", undefined);
+		console.log(dsn);
         }
     );
 
