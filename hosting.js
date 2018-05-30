@@ -6,7 +6,7 @@ function launch() {
 // релиз клиента (A/B тестирование)
 
     var publicReleaseDSN = "https://048cc079e2564a00a68cb9cfcdc0e51a@sentry.tankionline.com/6";
-    var privateReleaseDSN = "https://aac07d0aaebf4eca8d79ce794f90ea91@sentry.tankionline.com/4";
+    var privateReleaseDSN = "https://7130333fffb649b99659c15328e42a05@admin.tankionline.com/9";
     var releaseDSN = "https://4dfa598ba1da4377b43a5583887d6d27@sentry.tankionline.com/5";
 
 
