@@ -37,6 +37,7 @@ function launch() {
                     dsn = privateReleaseDSN
                 }
             }
+		dsn = privateReleaseDSN
             loadResourcesAndLaunchGame(dsn, "versions.json", undefined);
 		console.log(dsn);
         }
